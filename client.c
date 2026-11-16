@@ -54,7 +54,8 @@ void send_malformed(int sockfd, const struct sockaddr_in *server)
 int main(void)
 {
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0){
+    if (sockfd < 0)
+    {
         perror("socket");
         return EXIT_FAILURE;
     }
@@ -63,7 +64,8 @@ int main(void)
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = TIMEOUT_MS * 1000;
-    if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
         perror("setsocketopt");
         return EXIT_FAILURE;
     }
@@ -77,39 +79,42 @@ int main(void)
     printf("[CLIENT] type a line and press Enter (Ctrl+D to quit)\n");
     printf("[CLIENT] commands: /seq N  -> next packet uses seq N\n");
     printf("[CLIENT]           /bad    -> send a malformed packet\n");
+    printf("[CLIENT]           /last DATA -> send last package\n");
 
     uint32_t seq = 0;
     char send_buffer[VUDP_MAX_PYL];
     int server_alive = 1;
+    int fin_sent = 0;
 
     // fgets returned bei ctrl d NULL
-    while (fgets(send_buffer, sizeof(send_buffer), stdin) != NULL) //BLOCKING
+    while (fgets(send_buffer, sizeof(send_buffer), stdin) != NULL) // BLOCKING
     {
         size_t len = strcspn(send_buffer, "\n");
         send_buffer[len] = '\0';
 
-        if (strncmp(send_buffer, "/seq", 4) == 0)
-        {
+        if (strncmp(send_buffer, "/last ", 6) == 0){
+            send_reliable(sockfd, &server, VUDP_FLAG_DATA | VUDP_FLAG_FIN, seq, send_buffer + 6, len - 6);
+            fin_sent = 1;
+            break;
+        }
+        else if (strncmp(send_buffer, "/seq", 4) == 0){
             seq = (uint32_t)atoi(send_buffer + 4);
             printf("[CLIENT] next seq is now %u\n", seq);
         }
-        else if (strcmp(send_buffer, "/bad") == 0)
-        {
+        else if (strcmp(send_buffer, "/bad") == 0){
             send_malformed(sockfd, &server);
         }
-        else if (send_reliable(sockfd, &server, VUDP_FLAG_DATA, seq, send_buffer, len))
-        {
+        else if (send_reliable(sockfd, &server, VUDP_FLAG_DATA, seq, send_buffer, len)){
             seq++;
         }
-        else
-        {
+        else{
             printf("[CLIENT] server not responding.\n");
             server_alive = 0;
             break;
         }
     }
 
-    if (server_alive)
+    if (server_alive && !fin_sent)
         send_reliable(sockfd, &server, VUDP_FLAG_FIN, seq, "", 0);
 
     close(sockfd);
